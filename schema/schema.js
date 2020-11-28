@@ -12,10 +12,12 @@ const CardType = new GraphQLObjectType({
     title: { type: GraphQLNonNull(GraphQLString) },
     description: { type: GraphQLNonNull(GraphQLString) },
     isAdded: { type: GraphQLNonNull(GraphQLBoolean) },
-    collection: {
-      type: CollectionType,
+    collections: {
+      type: GraphQLList(CollectionType),
       resolve(parent, args) {
-        return Collections.findById(parent.collectionId);
+        const collections = [];
+        parent.collectionsId.forEach((collectionId) => collections.push(Collections.findById(collectionId)));
+        return collections;
       },
     },
   }),
@@ -30,7 +32,7 @@ const CollectionType = new GraphQLObjectType({
     cards: {
       type: GraphQLList(CardType),
       resolve(parent, args) {
-        return Cards.find({ collectionId: parent.id });
+        return Cards.find({ collectionsId: parent.id });
       },
     },
   }),
@@ -46,16 +48,21 @@ const Mutation = new GraphQLObjectType({
         title: { type: GraphQLNonNull(GraphQLString) },
         description: { type: GraphQLNonNull(GraphQLString) },
         collectionId: { type: (GraphQLID) },
+        isAdded: { type: GraphQLBoolean },
       },
       resolve(parent, args) {
+        const card = Cards.findById(args.id);
         return Cards.findByIdAndUpdate(args.id,
-          { $set: { title: args.title, description: args.description, collectionId: args.collectionId } });
+          {
+            $set: {
+              title: args.title, description: args.description, collectionsId: [args.collectionId, ...card.collectionsId], isAdded: true,
+            },
+          });
       },
     },
     addCard: {
       type: CardType,
       args: {
-        positionAfter: { type: GraphQLID },
         title: { type: GraphQLNonNull(GraphQLString) },
         collectionId: { type: GraphQLNonNull(GraphQLID) },
         description: { type: GraphQLNonNull(GraphQLString) },
@@ -64,14 +71,15 @@ const Mutation = new GraphQLObjectType({
         const card = new Cards({
           title: args.title,
           description: args.description,
-          collectionId: args.collectionId,
+          collectionsId: [args.collectionId],
+          isAdded: true,
         });
         return card.save();
       },
     },
     deleteCard: {
       type: CardType,
-      args: { id: { type: GraphQLNonNull(GraphQLID) } },
+      args: { id: { type: GraphQLNonNull(GraphQLID) }, collectionId: { type: GraphQLNonNull(GraphQLID) } }, // инфа о пользователе
       resolve(parent, args) {
         return Cards.findByIdAndRemove(args.id);
       },
@@ -81,13 +89,14 @@ const Mutation = new GraphQLObjectType({
       args: {
         title: { type: GraphQLNonNull(GraphQLString) },
         description: { type: GraphQLNonNull(GraphQLString) },
-        collectionId: { type: GraphQLNonNull(GraphQLID) },
+        collectionsId: { type: GraphQLList(GraphQLID) },
       },
       resolve(parent, args) {
         const card = new Cards({
           title: args.title,
           description: args.description,
-          collectionId: args.collectionId,
+          collectionsId: args.collectionsId,
+          isAdded: true, // другая реализация должна быть
         });
         return card.save();
       },
@@ -98,7 +107,7 @@ const Mutation = new GraphQLObjectType({
         id: { type: GraphQLNonNull(GraphQLID) },
         title: { type: GraphQLString },
         description: { type: GraphQLString },
-        isAdded: { type: GraphQLString },
+        isAdded: { type: GraphQLBoolean },
       },
       resolve(parent, args) {
         return Collections.findByIdAndUpdate(args.id,
@@ -127,7 +136,7 @@ const Query = new GraphQLObjectType({
   fields: {
     card: {
       type: CardType,
-      args: { id: { type: GraphQLID } },
+      args: { id: { type: GraphQLID }, userId: { type: GraphQLID } }, // тут нужен collectionID?
       resolve(parent, args) {
         return Cards.findById(args.id);
       },
@@ -141,7 +150,8 @@ const Query = new GraphQLObjectType({
     },
     collections: {
       type: GraphQLList(CollectionType),
-      resolve() {
+      args: { userId: { type: GraphQLID } },
+      resolve(parent, args) {
         return Collections.find({});
       },
     },
